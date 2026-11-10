@@ -1,10 +1,150 @@
 import React, { useState, useEffect } from 'react';
-import { Mic, Globe, Key, Shield, Zap, Save, RefreshCw, CheckCircle, Copy, Check } from 'lucide-react';
-import { getSettings, saveSettings } from '../api/client';
+import { Mic, Globe, Key, Shield, Zap, Save, RefreshCw, CheckCircle, Copy, Check, X, Send, AlertCircle } from 'lucide-react';
+import { getSettings, saveSettings, testTwilio } from '../api/client';
+
+const TwilioModal: React.FC<{
+  currentConfig?: any;
+  onClose: () => void;
+  onSaved: (cfg: any) => void;
+}> = ({ currentConfig, onClose, onSaved }) => {
+  const [accountSid, setAccountSid] = useState(currentConfig?.accountSid || '');
+  const [authToken, setAuthToken] = useState(currentConfig?.authToken || '');
+  const [fromPhone, setFromPhone] = useState(currentConfig?.fromPhone || '+1 (512) 555-0199');
+  const [testPhone, setTestPhone] = useState('+1 (512) 800-1234');
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ success: boolean; msg: string } | null>(null);
+
+  const handleTest = async () => {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const res = await testTwilio({
+        accountSid,
+        authToken,
+        fromPhone,
+        toPhone: testPhone,
+        testMessage: 'Hello from HomeServe AI! Your Twilio integration is active and verified.'
+      });
+      if (res.status === 'failed') {
+        setTestResult({ success: false, msg: res.error || 'Twilio test failed' });
+      } else {
+        setTestResult({
+          success: true,
+          msg: `SMS ${res.status === 'sent' ? 'Delivered via Twilio API' : 'Dispatched (Simulated)'}! SID: ${res.sid}`
+        });
+      }
+    } catch (err: any) {
+      setTestResult({ success: false, msg: err.message || 'Failed to dispatch test SMS' });
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const handleSave = () => {
+    onSaved({ accountSid, authToken, fromPhone });
+    onClose();
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" style={{ width: 540 }} onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(244,63,94,0.15)', color: 'var(--accent-rose)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 13 }}>
+              TW
+            </div>
+            <div>
+              <div className="modal-title">Twilio SMS Gateway Configuration</div>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Send automated emergency alerts & booking confirmations</div>
+            </div>
+          </div>
+          <button className="icon-btn" onClick={onClose}><X size={15} /></button>
+        </div>
+
+        <div style={{ marginBottom: 14 }}>
+          <div className="input-group" style={{ marginBottom: 12 }}>
+            <label className="input-label">Twilio Account SID</label>
+            <input
+              className="input-field"
+              placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+              value={accountSid}
+              onChange={e => setAccountSid(e.target.value)}
+            />
+          </div>
+
+          <div className="input-group" style={{ marginBottom: 12 }}>
+            <label className="input-label">Twilio Auth Token</label>
+            <input
+              type="password"
+              className="input-field"
+              placeholder="••••••••••••••••••••••••••••••••"
+              value={authToken}
+              onChange={e => setAuthToken(e.target.value)}
+            />
+          </div>
+
+          <div className="input-group" style={{ marginBottom: 14 }}>
+            <label className="input-label">Twilio Sender Phone Number</label>
+            <input
+              className="input-field"
+              placeholder="+1 (512) 555-0199"
+              value={fromPhone}
+              onChange={e => setFromPhone(e.target.value)}
+            />
+          </div>
+
+          {/* Test Dispatch Box */}
+          <div style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: 10, padding: 14, marginBottom: 16 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 8 }}>
+              Test Live SMS Delivery
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input
+                className="input-field"
+                placeholder="Recipient Phone (+1...)"
+                value={testPhone}
+                onChange={e => setTestPhone(e.target.value)}
+                style={{ flex: 1 }}
+              />
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={handleTest}
+                disabled={testing}
+                style={{ flexShrink: 0, gap: 6 }}
+              >
+                <Send size={12} /> {testing ? 'Sending...' : 'Send Test'}
+              </button>
+            </div>
+            {testResult && (
+              <div style={{
+                marginTop: 10,
+                fontSize: 12,
+                color: testResult.success ? 'var(--accent-emerald)' : 'var(--accent-rose)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6
+              }}>
+                {testResult.success ? <CheckCircle size={14} /> : <AlertCircle size={14} />}
+                <span>{testResult.msg}</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', borderTop: '1px solid var(--border-subtle)', paddingTop: 14 }}>
+          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" onClick={handleSave}>Save Twilio Settings</button>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const SettingsPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState('voice');
   const [copiedWebhook, setCopiedWebhook] = useState<string | null>(null);
+  const [isTwilioModalOpen, setIsTwilioModalOpen] = useState(false);
 
   const [voiceSettings, setVoiceSettings] = useState({
     agentName: 'Sarah',
@@ -411,7 +551,11 @@ const SettingsPage: React.FC = () => {
                         {integration.connected ? <CheckCircle size={9} /> : null}
                         {integration.connected ? 'Connected' : 'Not Connected'}
                       </span>
-                      <button className="btn btn-secondary btn-xs" id={`config-${integration.name.replace(/\s+/g, '-')}`}>
+                      <button
+                        className="btn btn-secondary btn-xs"
+                        id={`config-${integration.name.replace(/\s+/g, '-')}`}
+                        onClick={() => integration.name === 'Twilio' && setIsTwilioModalOpen(true)}
+                      >
                         {integration.connected ? 'Reconfigure' : 'Connect'}
                       </button>
                     </div>
@@ -479,6 +623,18 @@ const SettingsPage: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {isTwilioModalOpen && (
+        <TwilioModal
+          currentConfig={(businessSettings as any).twilioSettings}
+          onClose={() => setIsTwilioModalOpen(false)}
+          onSaved={cfg => {
+            const updated = { ...businessSettings, twilioSettings: cfg };
+            setBusinessSettings(updated as any);
+            saveSettings({ voiceSettings, businessSettings: updated as any, qualificationSettings });
+          }}
+        />
+      )}
     </div>
   );
 };

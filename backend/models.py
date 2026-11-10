@@ -82,3 +82,14 @@ class UserModel(Base):
     role = Column(String, default="owner")
     createdAt = Column(DateTime, default=datetime.utcnow)
 
+class SmsLogModel(Base):
+    __tablename__ = "sms_logs"
+
+    id = Column(String, primary_key=True, index=True)
+    toPhone = Column(String)
+    message = Column(Text)
+    trigger = Column(String) # 'Emergency Alert' | 'Booking Confirmation' | 'Test' | 'Manual'
+    status = Column(String) # 'delivered' | 'sent' | 'simulated' | 'failed'
+    sid = Column(String, nullable=True)
+    sentAt = Column(DateTime, default=datetime.utcnow)
+

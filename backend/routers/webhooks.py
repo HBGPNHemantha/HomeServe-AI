@@ -8,6 +8,7 @@ from datetime import datetime
 from ..database import get_db
 from ..models import CallModel, LeadModel, SettingsModel
 from ..services.ai_analyzer import analyze_call_transcript
+from ..services.sms_service import send_emergency_alert_to_owner
 from ..websocket_manager import manager
 
 router = APIRouter(prefix="/api/webhooks", tags=["webhooks"])
@@ -121,6 +122,13 @@ async def handle_voice_webhook(payload: VoiceCallPayload, db: Session = Depends(
     db.refresh(db_call)
     if db_lead:
         db.refresh(db_lead)
+
+    # If this is an emergency, automatically dispatch high-priority SMS alert to business owner
+    if analysis["urgency"] == "emergency":
+        try:
+            await send_emergency_alert_to_owner(db_call, db)
+        except Exception as e:
+            print(f"Failed to send emergency SMS alert: {e}")
 
     # Broadcast real-time event to all connected dashboard clients
     await manager.broadcast({

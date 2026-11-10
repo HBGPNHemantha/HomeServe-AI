@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { MessageSquare, CheckCircle, Clock, Zap, Edit3, Plus, Send, Star, DollarSign, Bell, PhoneOff, Trash2, X } from 'lucide-react';
-import { getSmsTemplates, updateSmsTemplate, createSmsTemplate, deleteSmsTemplate, sendSms } from '../api/client';
+import { MessageSquare, CheckCircle, Clock, Zap, Edit3, Plus, Send, Star, DollarSign, Bell, PhoneOff, Trash2, X, AlertCircle, Inbox } from 'lucide-react';
+import { getSmsTemplates, updateSmsTemplate, createSmsTemplate, deleteSmsTemplate, sendSms, getSmsLogs } from '../api/client';
+import type { SmsLog } from '../api/client';
 import type { SmsTemplate } from '../data/mockData';
+import { useWebSocket } from '../context/WebSocketContext';
 
 const triggerIcons: Record<string, React.ReactNode> = {
   'On booking created': <CheckCircle size={13} />,
@@ -230,6 +232,8 @@ const SmsPage: React.FC = () => {
   const [editingTemplate, setEditingTemplate] = useState<SmsTemplate | null>(null);
   const [isNewTemplateOpen, setIsNewTemplateOpen] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [smsLogs, setSmsLogs] = useState<SmsLog[]>([]);
+  const { lastMessage } = useWebSocket();
 
   const fetchTemplatesList = async () => {
     try {
@@ -244,7 +248,19 @@ const SmsPage: React.FC = () => {
 
   useEffect(() => {
     fetchTemplatesList();
+    getSmsLogs().then(setSmsLogs).catch(() => {});
   }, []);
+
+  // Live WebSocket updates for new SMS log entries
+  useEffect(() => {
+    if (!lastMessage) return;
+    try {
+      const msg = JSON.parse(lastMessage);
+      if (msg.type === 'NEW_SMS_LOG' && msg.data) {
+        setSmsLogs(prev => [msg.data, ...prev]);
+      }
+    } catch { /* ignore */ }
+  }, [lastMessage]);
 
   const toggleTemplate = async (id: string) => {
     const template = templates.find(t => t.id === id);
@@ -431,6 +447,85 @@ const SmsPage: React.FC = () => {
           onCreated={fetchTemplatesList}
         />
       )}
+
+      {/* Live Outbox / Delivery History */}
+      <div className="card" style={{ marginTop: 28 }}>
+        <div className="card-header">
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div className="stat-icon rose"><Inbox size={15} /></div>
+              <div>
+                <div className="section-title">Live Outbox · Delivery History</div>
+                <div className="section-sub">Real-time SMS dispatch log — updates automatically via WebSocket</div>
+              </div>
+            </div>
+            <span className="badge" style={{ background: 'rgba(244,63,94,0.12)', color: 'var(--accent-rose)', border: '1px solid rgba(244,63,94,0.2)', borderRadius: 99, fontSize: 11, padding: '3px 10px' }}>
+              {smsLogs.length} messages
+            </span>
+          </div>
+        </div>
+        <div className="card-body" style={{ padding: 0 }}>
+          {smsLogs.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '32px 24px', color: 'var(--text-muted)' }}>
+              <Inbox size={28} style={{ marginBottom: 10, opacity: 0.4 }} />
+              <div style={{ fontSize: 13 }}>No SMS messages dispatched yet.</div>
+              <div style={{ fontSize: 12, marginTop: 4 }}>Emergency alerts and booking confirmations will appear here in real time.</div>
+            </div>
+          ) : (
+            <table className="data-table" style={{ width: '100%' }}>
+              <thead>
+                <tr>
+                  <th>Trigger</th>
+                  <th>Recipient</th>
+                  <th>Message Preview</th>
+                  <th>Status</th>
+                  <th>SID</th>
+                  <th>Sent At</th>
+                </tr>
+              </thead>
+              <tbody>
+                {smsLogs.map(log => (
+                  <tr key={log.id}>
+                    <td>
+                      <span style={{
+                        fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 6,
+                        background: log.trigger === 'emergency_alert' ? 'rgba(244,63,94,0.12)' : 'rgba(6,182,212,0.1)',
+                        color: log.trigger === 'emergency_alert' ? 'var(--accent-rose)' : 'var(--accent-cyan)',
+                        textTransform: 'capitalize'
+                      }}>
+                        {log.trigger.replace(/_/g, ' ')}
+                      </span>
+                    </td>
+                    <td style={{ fontFamily: 'monospace', fontSize: 12 }}>{log.toPhone}</td>
+                    <td style={{ maxWidth: 260 }}>
+                      <span style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {log.message}
+                      </span>
+                    </td>
+                    <td>
+                      <span className={`badge ${log.status === 'sent' || log.status === 'delivered' ? 'completed' : log.status === 'simulated' ? 'pending' : 'cancelled'}`}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                        {log.status === 'sent' || log.status === 'delivered'
+                          ? <CheckCircle size={9} />
+                          : log.status === 'simulated'
+                          ? <Clock size={9} />
+                          : <AlertCircle size={9} />}
+                        {log.status}
+                      </span>
+                    </td>
+                    <td style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--text-muted)' }}>
+                      {log.sid ? log.sid.slice(0, 16) + '…' : '—'}
+                    </td>
+                    <td style={{ fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                      {log.sentAt ? new Date(log.sentAt).toLocaleString() : '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
     </div>
   );
 };

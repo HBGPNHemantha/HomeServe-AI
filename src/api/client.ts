@@ -246,6 +246,43 @@ export async function sendSms(to: string, message: string, templateId?: string) 
   return res.json();
 }
 
+export interface SmsLog {
+  id: string;
+  toPhone: string;
+  message: string;
+  trigger: string;
+  status: 'delivered' | 'sent' | 'simulated' | 'failed';
+  sid: string;
+  sentAt: string;
+}
+
+export async function getSmsLogs(): Promise<SmsLog[]> {
+  try {
+    const res = await fetch(`${BASE_URL}/sms/logs`);
+    if (!res.ok) throw new Error('Failed to fetch sms logs');
+    return await res.json();
+  } catch (err) {
+    console.warn('API unavailable, returning empty logs:', err);
+    return [];
+  }
+}
+
+export async function testTwilio(payload: {
+  accountSid: string;
+  authToken: string;
+  fromPhone: string;
+  toPhone: string;
+  testMessage?: string;
+}) {
+  const res = await fetch(`${BASE_URL}/sms/test-twilio`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error('Failed to send Twilio test message');
+  return res.json();
+}
+
 // Webhook & Voice AI API
 export async function simulateIncomingCall(scenario: 'burst_pipe' | 'ac_repair' | 'roofing' = 'burst_pipe') {
   const res = await fetch(`${BASE_URL}/webhooks/simulate?scenario=${scenario}`, {

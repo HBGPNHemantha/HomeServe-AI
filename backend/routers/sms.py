@@ -4,8 +4,9 @@ from typing import List, Optional
 from pydantic import BaseModel
 import uuid
 from ..database import get_db
-from ..models import SmsTemplateModel
+from ..models import SmsTemplateModel, SmsLogModel
 from ..schemas import SmsTemplateResponse, SmsTemplateUpdate, SmsTemplateBase
+from ..services.sms_service import dispatch_sms
 
 router = APIRouter(prefix="/api/sms", tags=["sms"])
 
@@ -13,9 +14,17 @@ class SendSmsRequest(BaseModel):
     to: str
     message: str
     templateId: str | None = None
+    trigger: str | None = "Manual Send"
 
 class SmsTemplateCreate(SmsTemplateBase):
     id: Optional[str] = None
+
+class TwilioTestRequest(BaseModel):
+    accountSid: str
+    authToken: str
+    fromPhone: str
+    toPhone: str
+    testMessage: Optional[str] = "Hello from HomeServe AI! Your Twilio integration is active and verified."
 
 @router.get("/templates", response_model=List[SmsTemplateResponse])
 def get_templates(db: Session = Depends(get_db)):
@@ -61,7 +70,7 @@ def update_template(template_id: str, template_data: SmsTemplateUpdate, db: Sess
     return template
 
 @router.post("/send")
-def send_sms(request: SendSmsRequest, db: Session = Depends(get_db)):
+async def send_sms(request: SendSmsRequest, db: Session = Depends(get_db)):
     # Update template count if template was used
     if request.templateId:
         template = db.query(SmsTemplateModel).filter(SmsTemplateModel.id == request.templateId).first()
@@ -69,11 +78,39 @@ def send_sms(request: SendSmsRequest, db: Session = Depends(get_db)):
             template.sentCount = (template.sentCount or 0) + 1
             db.commit()
     
-    # In real world this would connect to Twilio / AWS SNS
-    return {
-        "status": "sent",
-        "to": request.to,
-        "message": request.message,
-        "timestamp": "Just now"
-    }
+    result = await dispatch_sms(
+        to_phone=request.to,
+        message=request.message,
+        trigger=request.trigger or "Manual Send",
+        db=db
+    )
+    return result
 
+@router.get("/logs")
+def get_sms_logs(db: Session = Depends(get_db)):
+    logs = db.query(SmsLogModel).order_by(SmsLogModel.sentAt.desc()).limit(50).all()
+    return [
+        {
+            "id": l.id,
+            "toPhone": l.toPhone,
+            "message": l.message,
+            "trigger": l.trigger,
+            "status": l.status,
+            "sid": l.sid,
+            "sentAt": l.sentAt.strftime("%b %d, %H:%M")
+        }
+        for l in logs
+    ]
+
+@router.post("/test-twilio")
+async def test_twilio(request: TwilioTestRequest, db: Session = Depends(get_db)):
+    res = await dispatch_sms(
+        to_phone=request.toPhone,
+        message=request.testMessage or "Twilio integration test successful!",
+        trigger="Twilio Test",
+        db=db,
+        account_sid=request.accountSid,
+        auth_token=request.authToken,
+        from_phone=request.fromPhone
+    )
+    return res

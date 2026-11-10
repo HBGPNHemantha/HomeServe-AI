@@ -6,6 +6,7 @@ from ..database import get_db
 from ..models import BookingModel
 from ..schemas import BookingResponse, BookingCreate, BookingUpdate
 from ..websocket_manager import manager
+from ..services.sms_service import send_booking_confirmation
 
 router = APIRouter(prefix="/api/bookings", tags=["bookings"])
 
@@ -45,6 +46,12 @@ async def create_booking(booking_data: BookingCreate, db: Session = Depends(get_
     db.add(db_booking)
     db.commit()
     db.refresh(db_booking)
+
+    # Automatically dispatch SMS confirmation to the customer's phone
+    try:
+        await send_booking_confirmation(db_booking, db)
+    except Exception as e:
+        print(f"Failed to send booking SMS confirmation: {e}")
 
     await manager.broadcast({
         "type": "NEW_BOOKING",
