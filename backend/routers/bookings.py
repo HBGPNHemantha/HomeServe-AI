@@ -97,7 +97,6 @@ async def update_booking(booking_id: str, booking_data: BookingUpdate, db: Sessi
     })
 
     return booking
-    return booking
 
 @router.delete("/{booking_id}")
 def delete_booking(booking_id: str, db: Session = Depends(get_db)):
